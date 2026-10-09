@@ -123,6 +123,9 @@ Shared workshop GPUs may take longer than one second or return `429`; the client
 and retries `429`, `5xx`, timeouts, and transient connection failures with backoff.
 The client validates the fixed JSON schema and stops at the first failed window so it never
 feeds a non-adjacent or malformed state into the next second.
+Each successful one-second scene is also emitted immediately as one compact JSON line on
+standard output; progress and errors stay on standard error, while the full records continue
+to be persisted in the JSONL output file.
 
 The default `--media-mode auto` uses `video_frames`. If the workshop wrapper rejects that
 NIM 1.7 input type, the same five frames are encoded as a one-second 5 FPS MP4 and retried as
@@ -134,6 +137,50 @@ Never commit `.env`. Run tests with:
 ```sh
 python3 -m unittest discover -s tests -v
 ```
+
+## OpenRouter per-second win-probability demo
+
+`scripts/openrouter_win_probability.py` reuses the same sampling path, sends five ordered
+frames for each complete video second to OpenRouter's Decisions API, and asks
+`openai/gpt-6-luna-decisions` for a typed A/B choice. The two values in
+`answers.winner.probabilities` are used directly, so this path does not ask a chat model to
+invent or format a probability JSON response. The previous successful result is included as
+context for the next source-video second.
+
+Keep the API key in the current shell, never in a command saved to the repository:
+
+```sh
+export OPENROUTER_API_KEY='replace-with-your-openrouter-key'
+```
+
+Alternatively, copy `.env.example` to the ignored `.env` file and set
+`OPENROUTER_API_KEY` there; the script loads that local file automatically.
+
+Run a three-second local demo:
+
+```sh
+python3 scripts/openrouter_win_probability.py \
+  videos/pereira_rountree_45s.mp4 \
+  --fighter-map '{"A":{"name":"Alex Pereira"},"B":{"name":"Khalil Rountree Jr."}}' \
+  --max-windows 3 \
+  --realtime \
+  --output runs/openrouter/pereira_demo_3s.jsonl \
+  --overwrite
+```
+
+Each successful second is printed immediately as one compact JSON line. Detailed records,
+including source timestamps, latency, usage, and prompt hash, are appended to the output
+JSONL; API keys and encoded frames are not persisted. To replace the probability rubric, use
+`--prompt '...'` or `--prompt-file /path/to/prompt.txt`. The built-in rubric considers only
+visible offense, control, takedown/get-up results, submission threats, defense, and visible
+clock context, while excluding fame, records, odds, known results, and invisible conditions.
+
+`--realtime` prevents a fast request from starting before its source second is due. Requests
+remain serial so `previous_state` stays contiguous; if a model call takes longer than one
+second, this smoke-test path cannot maintain one wall-clock request per second. These outputs
+are uncalibrated model estimates. A famous archived fight with real names can also leak the
+known result through model memory, so use unseen footage or identity-neutral appearance
+descriptions when evaluating whether probabilities come only from visual evidence.
 
 ## References
 

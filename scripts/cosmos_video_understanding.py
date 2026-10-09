@@ -155,6 +155,15 @@ def eprint(*args: object) -> None:
     print(*args, file=sys.stderr, flush=True)
 
 
+def emit_terminal_scene(scene: Mapping[str, Any]) -> None:
+    """Emit one completed video-second result as one immediately flushed JSON line."""
+
+    print(
+        json.dumps(scene, ensure_ascii=False, separators=(",", ":")),
+        flush=True,
+    )
+
+
 def _parse_env_value(raw: str) -> str:
     raw = raw.strip()
     if not raw:
@@ -684,10 +693,18 @@ def response_text(response: Mapping[str, Any]) -> str:
 
 
 def parse_json_object(text: str) -> dict[str, Any] | None:
-    """Parse one bare JSON object without Markdown or surrounding explanation."""
+    """Parse one JSON object, optionally wrapped in one JSON Markdown fence."""
 
+    candidate = text.strip()
+    fence = re.fullmatch(
+        r"```(?:json)?\s*(.*?)\s*```",
+        candidate,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if fence:
+        candidate = fence.group(1).strip()
     try:
-        parsed = json.loads(text.strip())
+        parsed = json.loads(candidate)
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
@@ -701,7 +718,7 @@ def parse_scene_state(
     scene = parse_json_object(text)
     if scene is None:
         raise CosmosInvalidResponseError(
-            "Cosmos response was not one bare valid JSON object"
+            "Cosmos response was not one valid JSON object"
         )
     return validate_scene_state(scene, previous_state)
 
@@ -1255,6 +1272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     output.write(json.dumps(record, ensure_ascii=False) + "\n")
                     output.flush()
                     if record["status"] == "ok":
+                        emit_terminal_scene(record["scene"])
                         eprint(f"[{window.index}] ok in {record['latency_s']:.2f}s")
                     else:
                         eprint(f"[{window.index}] failed: {record['error']}")

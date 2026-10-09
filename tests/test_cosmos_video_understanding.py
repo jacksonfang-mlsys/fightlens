@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -21,6 +22,7 @@ from scripts.cosmos_video_understanding import (
     analyze_window,
     api_url,
     build_windows,
+    emit_terminal_scene,
     extract_frames,
     frame_payload,
     frame_times_for_window,
@@ -216,10 +218,11 @@ class CosmosVideoUnderstandingTests(unittest.TestCase):
         self.assertEqual(prompt_input["window"]["frame_count"], 3)
         self.assertEqual(prompt_input["window"]["frame_times_s"], [0.2, 0.5, 0.8])
 
-    def test_json_parser_requires_one_bare_object(self):
+    def test_json_parser_accepts_bare_or_single_json_fence(self):
         self.assertEqual(parse_json_object('{"ok": true}'), {"ok": True})
-        self.assertIsNone(parse_json_object('```json\n{"ok": true}\n```'))
+        self.assertEqual(parse_json_object('```json\n{"ok": true}\n```'), {"ok": True})
         self.assertIsNone(parse_json_object('result: {"ok": true}'))
+        self.assertIsNone(parse_json_object('result:\n```json\n{"ok": true}\n```'))
         self.assertIsNone(parse_json_object("not json"))
 
     def test_scene_state_enforces_fixed_schema(self):
@@ -233,8 +236,7 @@ class CosmosVideoUnderstandingTests(unittest.TestCase):
         }
         encoded = json.dumps(scene, ensure_ascii=False)
         self.assertEqual(parse_scene_state(encoded, None), scene)
-        with self.assertRaises(cosmos.CosmosInvalidResponseError):
-            parse_scene_state(f"```json\n{encoded}\n```", None)
+        self.assertEqual(parse_scene_state(f"```json\n{encoded}\n```", None), scene)
         with self.assertRaises(cosmos.CosmosInvalidResponseError):
             parse_scene_state(json.dumps({**scene, "extra": True}), None)
         with self.assertRaises(cosmos.CosmosInvalidResponseError):
@@ -263,6 +265,14 @@ class CosmosVideoUnderstandingTests(unittest.TestCase):
     def test_response_text(self):
         response = {"choices": [{"message": {"content": "scene"}}]}
         self.assertEqual(response_text(response), "scene")
+
+    def test_terminal_scene_is_one_json_line_and_flushed(self):
+        scene = {"phase": "站立对抗", "events": []}
+        with mock.patch("builtins.print") as print_mock:
+            emit_terminal_scene(scene)
+        print_mock.assert_called_once_with(
+            '{"phase":"站立对抗","events":[]}', flush=True
+        )
 
     def test_socket_timeout_is_retried_on_python_39(self):
         response = mock.MagicMock()
@@ -502,6 +512,7 @@ class CosmosVideoUnderstandingTests(unittest.TestCase):
                         (responses[1], "video_frames", 0.1),
                     ],
                 ) as analyze,
+                mock.patch("sys.stdout", new_callable=io.StringIO) as terminal,
             ):
                 result = cosmos.main(
                     [
@@ -526,6 +537,10 @@ class CosmosVideoUnderstandingTests(unittest.TestCase):
             self.assertEqual(records[0]["schema_version"], 3)
             self.assertIsNone(records[0]["previous_state"])
             self.assertEqual(records[1]["previous_state"], scene_zero)
+            terminal_scenes = [
+                json.loads(line) for line in terminal.getvalue().splitlines()
+            ]
+            self.assertEqual(terminal_scenes, [scene_zero, scene_one])
 
     def test_invalid_model_json_is_recorded_as_invalid_response(self):
         with tempfile.TemporaryDirectory() as temp_name:
@@ -549,6 +564,7 @@ class CosmosVideoUnderstandingTests(unittest.TestCase):
                     "analyze_window",
                     return_value=(response, "video_frames", 0.1),
                 ) as analyze,
+                mock.patch("sys.stdout", new_callable=io.StringIO) as terminal,
             ):
                 result = cosmos.main(
                     [
@@ -570,6 +586,7 @@ class CosmosVideoUnderstandingTests(unittest.TestCase):
             self.assertNotIn("scene", record)
             self.assertEqual(record["raw_response_text"], "not json")
             self.assertEqual(record["video_sha256"], sha256_file(video))
+            self.assertEqual(terminal.getvalue(), "")
 
     @unittest.skipUnless(
         shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg required"
