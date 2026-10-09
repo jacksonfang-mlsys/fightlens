@@ -1,0 +1,39 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# JavaScript
+node_modules/
+dist/
+.next/
+
+# Local media, model weights, and experiment artifacts
+data/
+videos/
+models/
+runs/
+wandb/
+artifacts/
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.pt
+*.onnx
+*.engine
+*.safetensors
+
+# OS/editor files
+.DS_Store
+*.swp
