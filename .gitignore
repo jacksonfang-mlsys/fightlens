@@ -25,6 +25,7 @@ models/
 runs/
 wandb/
 artifacts/
+tmp/
 *.mp4
 *.mov
 *.mkv
